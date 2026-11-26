@@ -1,7 +1,9 @@
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 
 import { config } from '../config/env.js';
 import { AppError } from '../utils/AppError.js';
+
+const MAX_OUTPUT_TOKENS = 550;
 
 const LANGUAGE_GUIDANCE = {
   urdu: 'Write replies in natural everyday Urdu script (اردو) suitable for WhatsApp texting. Avoid overly formal literary Urdu.',
@@ -38,42 +40,38 @@ Strict texting rules:
 - Never invent plans, times, locations, or facts that are not in the conversation.
 - For each requested style, write a genuinely distinct reply and a brief 1-sentence reason explaining why it fits the conversation context.`;
 
+/**
+ * Builds the Gemini response schema. Gemini supports a subset of JSON Schema,
+ * so this intentionally avoids OpenAI-specific fields such as `strict` and
+ * `additionalProperties`.
+ */
 function buildResponseSchema(requestedStyles) {
   return {
-    type: 'json_schema',
-    json_schema: {
-      name: 'replymate_suggestions',
-      strict: true,
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['replies'],
-        properties: {
-          replies: {
-            type: 'array',
-            minItems: requestedStyles.length,
-            maxItems: requestedStyles.length,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['style', 'text', 'reason'],
-              properties: {
-                style: {
-                  type: 'string',
-                  enum: requestedStyles,
-                },
-                text: {
-                  type: 'string',
-                },
-                reason: {
-                  type: 'string',
-                },
-              },
+    type: 'object',
+    properties: {
+      replies: {
+        type: 'array',
+        minItems: requestedStyles.length,
+        maxItems: requestedStyles.length,
+        items: {
+          type: 'object',
+          properties: {
+            style: {
+              type: 'string',
+              enum: requestedStyles,
+            },
+            text: {
+              type: 'string',
+            },
+            reason: {
+              type: 'string',
             },
           },
+          required: ['style', 'text', 'reason'],
         },
       },
     },
+    required: ['replies'],
   };
 }
 
@@ -121,15 +119,36 @@ function buildUserPrompt({
   return lines.join('\n');
 }
 
-function mapOpenAIError(error) {
+function getErrorStatus(error) {
+  const status = error?.status ?? error?.statusCode;
+  return typeof status === 'number' ? status : undefined;
+}
+
+function getErrorText(error) {
+  const parts = [error?.message, error?.body];
+  try {
+    parts.push(JSON.stringify(error?.error));
+  } catch {
+    // Ignore non-serializable error payloads.
+  }
+  return parts.filter((part) => typeof part === 'string').join(' ');
+}
+
+function mapGeminiError(error) {
   if (error instanceof AppError) {
     return error;
   }
 
-  const status = error?.status;
-  if (status === 401) {
+  const status = getErrorStatus(error);
+  const message = getErrorText(error);
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    (status === 400 && /api[_ ]?key|api_key_invalid/i.test(message))
+  ) {
     return new AppError(
-      'OpenAI API authentication failed. Check OPENAI_API_KEY in backend/.env.',
+      'AI service authentication failed. Please try again later.',
       502,
       'AI_AUTH_ERROR'
     );
@@ -141,12 +160,13 @@ function mapOpenAIError(error) {
       'AI_RATE_LIMITED'
     );
   }
-  if (error?.name === 'AbortError' || status === 408) {
-    return new AppError(
-      'AI reply generation timed out. Please try again.',
-      504,
-      'AI_TIMEOUT'
-    );
+  if (
+    status === 408 ||
+    status === 504 ||
+    error?.name === 'AbortError' ||
+    /timed out|timeout/i.test(message)
+  ) {
+    return new AppError('AI reply generation timed out. Please try again.', 504, 'AI_TIMEOUT');
   }
 
   return new AppError(
@@ -156,8 +176,19 @@ function mapOpenAIError(error) {
   );
 }
 
+function parseJsonResponse(rawContent) {
+  const trimmed = rawContent.trim();
+  // Gemini structured output is normally pure JSON, but tolerate markdown fences
+  // in case a model wraps the payload anyway.
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced ? fenced[1] : trimmed);
+}
+
 /**
- * Generates context-aware WhatsApp reply suggestions using OpenAI structured JSON output.
+ * Generates context-aware WhatsApp reply suggestions using Google Gemini
+ * structured JSON output. Requests are stateless (`store: false`) so chat text
+ * is not retained by the Interactions API.
+ *
  * Accepts an optional client override for clean unit testing without network calls.
  *
  * @param {object} params
@@ -166,7 +197,9 @@ function mapOpenAIError(error) {
  * @param {string[]} params.style
  * @param {string} params.language
  * @param {string} [params.previousReply]
- * @param {OpenAI} [clientOverride]
+ * @param {boolean} [params.conciseMode]
+ * @param {boolean} [params.avoidEmojis]
+ * @param {{ interactions: { create: Function } }} [clientOverride]
  */
 export async function generateContextAwareReplies(
   {
@@ -180,52 +213,50 @@ export async function generateContextAwareReplies(
   },
   clientOverride
 ) {
-  if (!clientOverride && !config.openaiApiKey) {
-    throw new AppError(
-      'OpenAI API key is not configured on the server. Add OPENAI_API_KEY in backend/.env.',
-      503,
-      'AI_NOT_CONFIGURED'
-    );
+  if (!clientOverride && !config.geminiApiKey) {
+    throw new AppError('AI service is not configured on the server.', 503, 'AI_NOT_CONFIGURED');
   }
 
   const client =
     clientOverride ??
-    new OpenAI({
-      apiKey: config.openaiApiKey,
-      timeout: 20000,
+    new GoogleGenAI({
+      apiKey: config.geminiApiKey,
+      httpOptions: { timeout: config.aiTimeoutMs },
     });
 
   try {
-    const completion = await client.chat.completions.create({
-      model: config.openaiModel,
-      temperature: 0.8,
-      max_tokens: 550,
-      response_format: buildResponseSchema(style),
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: buildUserPrompt({
-            conversation,
-            latestMessage,
-            style,
-            language,
-            previousReply,
-            conciseMode,
-            avoidEmojis,
-          }),
-        },
-      ],
+    const interaction = await client.interactions.create({
+      model: config.geminiModel,
+      input: buildUserPrompt({
+        conversation,
+        latestMessage,
+        style,
+        language,
+        previousReply,
+        conciseMode,
+        avoidEmojis,
+      }),
+      system_instruction: SYSTEM_PROMPT,
+      // Privacy-first: do not retain the conversation on Google's servers.
+      store: false,
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: buildResponseSchema(style),
+      },
+      generation_config: {
+        max_output_tokens: MAX_OUTPUT_TOKENS,
+      },
     });
 
-    const rawContent = completion?.choices?.[0]?.message?.content;
+    const rawContent = interaction?.output_text;
     if (!rawContent) {
       throw new AppError('AI returned an empty response. Please try again.', 502, 'AI_EMPTY');
     }
 
     let parsed;
     try {
-      parsed = JSON.parse(rawContent);
+      parsed = parseJsonResponse(rawContent);
     } catch {
       throw new AppError('AI returned malformed JSON output.', 502, 'AI_INVALID_JSON');
     }
@@ -259,6 +290,6 @@ export async function generateContextAwareReplies(
 
     return orderedReplies;
   } catch (error) {
-    throw mapOpenAIError(error);
+    throw mapGeminiError(error);
   }
 }

@@ -19,6 +19,19 @@ async function withServer(app, fn) {
   }
 }
 
+function buildFakeGeminiClient({ outputText, error } = {}) {
+  return {
+    interactions: {
+      create: async () => {
+        if (error) {
+          throw error;
+        }
+        return { output_text: outputText };
+      },
+    },
+  };
+}
+
 test('validateGenerateRepliesRequest accepts valid payload and applies defaults', () => {
   const result = validateGenerateRepliesRequest({
     conversation: 'Ali: Chai pe chalain?\nMe: Haan kab?',
@@ -47,40 +60,28 @@ test('validateGenerateRepliesRequest rejects missing latestMessage and invalid l
   assert.equal(badLanguage.valid, false);
 });
 
-test('generateContextAwareReplies parses structured OpenAI output and maps rate limits', async () => {
-  const fakeClient = {
-    chat: {
-      completions: {
-        create: async () => ({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  replies: [
-                    {
-                      style: 'natural',
-                      text: 'Done scene hai, 8 baje milte hain.',
-                      reason: 'Confirms the plan casually in Roman Urdu.',
-                    },
-                    {
-                      style: 'funny',
-                      text: '8 baje ya Pakistani 8 baje? 😅',
-                      reason: 'Adds light humor around timing.',
-                    },
-                    {
-                      style: 'friendly',
-                      text: 'Perfect! Looking forward to catching up at 8.',
-                      reason: 'Warmly confirms and keeps the mood upbeat.',
-                    },
-                  ],
-                }),
-              },
-            },
-          ],
-        }),
-      },
-    },
-  };
+test('generateContextAwareReplies parses structured Gemini output and maps rate limits', async () => {
+  const fakeClient = buildFakeGeminiClient({
+    outputText: JSON.stringify({
+      replies: [
+        {
+          style: 'natural',
+          text: 'Done scene hai, 8 baje milte hain.',
+          reason: 'Confirms the plan casually in Roman Urdu.',
+        },
+        {
+          style: 'funny',
+          text: '8 baje ya Pakistani 8 baje? 😅',
+          reason: 'Adds light humor around timing.',
+        },
+        {
+          style: 'friendly',
+          text: 'Perfect! Looking forward to catching up at 8.',
+          reason: 'Warmly confirms and keeps the mood upbeat.',
+        },
+      ],
+    }),
+  });
 
   const replies = await generateContextAwareReplies(
     {
@@ -97,17 +98,8 @@ test('generateContextAwareReplies parses structured OpenAI output and maps rate 
   assert.equal(replies[1].style, 'funny');
   assert.equal(replies[2].style, 'friendly');
 
-  const rateLimitedClient = {
-    chat: {
-      completions: {
-        create: async () => {
-          const err = new Error('Rate limit');
-          err.status = 429;
-          throw err;
-        },
-      },
-    },
-  };
+  const rateLimitError = new Error('Resource exhausted');
+  rateLimitError.status = 429;
 
   await assert.rejects(
     () =>
@@ -118,9 +110,86 @@ test('generateContextAwareReplies parses structured OpenAI output and maps rate 
           style: ['natural'],
           language: 'english',
         },
-        rateLimitedClient
+        buildFakeGeminiClient({ error: rateLimitError })
       ),
     (err) => err.statusCode === 429 && err.code === 'AI_RATE_LIMITED'
+  );
+});
+
+test('generateContextAwareReplies sends a stateless, schema-constrained Gemini request', async () => {
+  let capturedParams;
+  const client = {
+    interactions: {
+      create: async (params) => {
+        capturedParams = params;
+        return {
+          output_text: JSON.stringify({
+            replies: [{ style: 'natural', text: 'Theek hai yaar.', reason: 'Casual confirmation.' }],
+          }),
+        };
+      },
+    },
+  };
+
+  await generateContextAwareReplies(
+    {
+      conversation: 'Ali: Kal milte hain?',
+      latestMessage: 'Kal milte hain?',
+      style: ['natural'],
+      language: 'roman_urdu',
+    },
+    client
+  );
+
+  assert.equal(capturedParams.store, false);
+  assert.ok(capturedParams.system_instruction.includes('ReplyMate AI'));
+  assert.equal(capturedParams.response_format.type, 'text');
+  assert.equal(capturedParams.response_format.mime_type, 'application/json');
+  assert.deepEqual(capturedParams.response_format.schema.properties.replies.items.properties.style.enum, [
+    'natural',
+  ]);
+  assert.equal(capturedParams.generation_config.max_output_tokens, 550);
+});
+
+test('generateContextAwareReplies maps invalid API key to auth error', async () => {
+  const authError = new Error('400 API error occurred');
+  authError.status = 400;
+  authError.body = JSON.stringify({
+    error: {
+      status: 'INVALID_ARGUMENT',
+      message: 'API key not valid. Please pass a valid API key.',
+      details: [{ reason: 'API_KEY_INVALID' }],
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      generateContextAwareReplies(
+        {
+          conversation: 'Ali: Hi',
+          latestMessage: 'Hi',
+          style: ['natural'],
+          language: 'english',
+        },
+        buildFakeGeminiClient({ error: authError })
+      ),
+    (err) => err.statusCode === 502 && err.code === 'AI_AUTH_ERROR'
+  );
+});
+
+test('generateContextAwareReplies maps malformed output to a safe error', async () => {
+  await assert.rejects(
+    () =>
+      generateContextAwareReplies(
+        {
+          conversation: 'Ali: Hi',
+          latestMessage: 'Hi',
+          style: ['natural'],
+          language: 'english',
+        },
+        buildFakeGeminiClient({ outputText: 'not json' })
+      ),
+    (err) => err.statusCode === 502 && err.code === 'AI_INVALID_JSON'
   );
 });
 
@@ -139,6 +208,7 @@ test('GET /api/health and POST /api/replies/generate work end-to-end', async () 
     assert.equal(healthRes.status, 200);
     const healthJson = await healthRes.json();
     assert.equal(healthJson.ok, true);
+    assert.equal(typeof healthJson.aiConfigured, 'boolean');
 
     const invalidRes = await fetch(`${baseUrl}/api/replies/generate`, {
       method: 'POST',

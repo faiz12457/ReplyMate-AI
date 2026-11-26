@@ -7,11 +7,23 @@ import { AppError } from './utils/AppError.js';
 
 function createSimpleRateLimiter({ windowMs = 60_000, maxRequests = 30 } = {}) {
   const hits = new Map();
+  let requestsSinceSweep = 0;
 
   return (req, res, next) => {
     const now = Date.now();
     const key = req.ip || 'unknown';
     const record = hits.get(key);
+
+    // Opportunistically evict expired entries so the map cannot grow unbounded.
+    requestsSinceSweep += 1;
+    if (requestsSinceSweep >= 500) {
+      requestsSinceSweep = 0;
+      for (const [entryKey, entry] of hits) {
+        if (now > entry.resetAt) {
+          hits.delete(entryKey);
+        }
+      }
+    }
 
     if (!record || now > record.resetAt) {
       hits.set(key, { count: 1, resetAt: now + windowMs });
@@ -39,6 +51,10 @@ export function createApp({ replyGenerator } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
+
+  // Render (and most hosts) terminate TLS at a reverse proxy. Trusting exactly
+  // one hop makes req.ip the real client address for per-IP rate limiting.
+  app.set('trust proxy', 1);
 
   app.use(
     cors({
@@ -72,7 +88,7 @@ export function createApp({ replyGenerator } = {}) {
     res.status(200).json({
       ok: true,
       service: 'replymate-backend',
-      openaiConfigured: Boolean(config.openaiApiKey),
+      aiConfigured: Boolean(config.geminiApiKey),
     });
   });
 
