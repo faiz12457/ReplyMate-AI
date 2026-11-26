@@ -9,9 +9,11 @@
     "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.faiz12457.replymateai"
     },
     "android": {
+      "package": "com.faiz12457.replymateai",
       "adaptiveIcon": {
         "backgroundColor": "#EBF2FF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

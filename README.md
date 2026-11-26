@@ -151,12 +151,80 @@ The repo includes a [`render.yaml`](render.yaml) Blueprint.
    ```powershell
    npx.cmd expo start --clear
    ```
-3. For EAS builds, set the same variable in the EAS environment (or your `eas.json` profile env) before building:
+3. For EAS builds, store the same value in the EAS environment so cloud builds use it:
    ```powershell
-   npx.cmd eas-cli@latest env:create --name EXPO_PUBLIC_API_URL --value https://<your-service>.onrender.com --environment production
+   npx.cmd eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://<your-service>.onrender.com --environment production --visibility plaintext
    ```
+   Repeat with `--environment preview` for internal test builds.
 
 Use `https://` — iOS App Transport Security blocks plain HTTP outside localhost.
+
+---
+
+## Building the Mobile App (EAS)
+
+App identifiers are already set in `app.json`:
+
+| Field | Value |
+|---|---|
+| `android.package` | `com.faiz12457.replymateai` |
+| `ios.bundleIdentifier` | `com.faiz12457.replymateai` |
+
+> **Careful:** `android.package` is permanent once the app is uploaded to Google Play. Change it *before* the first upload if you want a different one.
+
+### One-time setup
+
+```powershell
+npx.cmd eas-cli@latest login          # opens the browser; sign in or create a free Expo account
+npx.cmd eas-cli@latest init           # creates the EAS project and writes extra.eas.projectId
+npx.cmd eas-cli@latest whoami         # confirm the account
+```
+
+Then set the API URL for the environments you will build:
+
+```powershell
+npx.cmd eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://<your-service>.onrender.com --environment production --visibility plaintext
+npx.cmd eas-cli@latest env:set --name EXPO_PUBLIC_API_URL --value https://<your-service>.onrender.com --environment preview --visibility plaintext
+```
+
+`EXPO_PUBLIC_*` values are embedded in the app bundle, so they must be plain text — never put secrets here.
+
+### Installable APK (test on a real phone, no store account needed)
+
+```powershell
+npx.cmd eas-cli@latest build --platform android --profile preview
+```
+
+The `preview` profile uses `distribution: internal` and `android.buildType: apk`. When the build finishes, EAS prints a URL; open it on the phone to download and install (allow "install unknown apps"). Or install over USB:
+
+```powershell
+npx.cmd eas-cli@latest build:run --platform android --latest
+```
+
+### Play Store release (AAB)
+
+```powershell
+npx.cmd eas-cli@latest build --platform android --profile production
+```
+
+This produces an `.aab`. EAS generates and stores the Android keystore on first run (choose **Generate new keystore**).
+
+### iOS
+
+```powershell
+npx.cmd eas-cli@latest build --platform ios --profile production
+```
+
+Requires an Apple Developer Program membership ($99/yr); EAS walks through signing in to your Apple account.
+
+### Submit to the stores
+
+```powershell
+npx.cmd eas-cli@latest submit --platform android --latest   # needs a Google Play Developer account ($25 one-time)
+npx.cmd eas-cli@latest submit --platform ios --latest       # needs the Apple Developer Program
+```
+
+Before submitting, replace the placeholder contact in [PRIVACY.md](PRIVACY.md) and host it at a public URL — both stores require a privacy policy link for apps that send data to a third party.
 
 ---
 
