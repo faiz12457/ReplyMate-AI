@@ -1,56 +1,167 @@
-# Welcome to your Expo app 👋
+# ReplyMate AI
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Never get stuck on what to reply.**  
+ReplyMate AI is a privacy-first WhatsApp reply assistant built with **Expo (React Native)** and a **Node.js / Express + OpenAI** backend. Paste a WhatsApp conversation or import an exported `.txt` chat file to receive three context-aware reply options (**Natural**, **Funny**, and **Friendly**) tailored to the tone, language, and latest incoming message.
 
-## Get started
+> **Privacy & Transparency:** ReplyMate AI **never** monitors WhatsApp automatically or reads live chats in the background. It only processes conversation text that you manually paste or import when you tap **Analyze Conversation**.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Project Structure
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```text
+ReplyMateAI/
+├── src/                        # Expo Router mobile app (TypeScript)
+│   ├── app/                    # File-based screens (_layout, index, home, input, suggestions, settings)
+│   ├── components/             # Reusable UI primitives (ui/) and chat components (chat/)
+│   ├── constants/              # Design system tokens, colors, typography, spacing (theme.ts)
+│   ├── hooks/                  # Theme, color-scheme, and Reanimated press-scale hooks
+│   ├── services/               # Backend API client (replyApi.ts)
+│   ├── types/                  # Shared domain TypeScript interfaces (replymate.ts)
+│   └── utils/                  # WhatsApp chat parser, .txt file picker, AsyncStorage helpers
+├── backend/                    # Node.js + Express + OpenAI API server (ES Modules)
+│   ├── src/
+│   │   ├── config/             # Environment variable loader (env.js)
+│   │   ├── routes/             # POST /api/replies/generate route
+│   │   ├── services/           # Context-aware OpenAI structured JSON service
+│   │   ├── validators/         # Request payload validation
+│   │   ├── app.js              # Express app, rate limiter, CORS, error handler
+│   │   └── server.js           # HTTP server entrypoint
+│   ├── tests/                  # Node unit & integration tests
+│   └── .env.example            # Backend environment template
+├── scripts/
+│   └── test-whatsapp-parser.mjs
+├── app.json                    # Expo SDK 58 configuration
+└── package.json                # Mobile dependencies & scripts
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+---
 
-### Other setup steps
+## Getting Started (Windows + Android Emulator)
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+> **PowerShell note:** If Windows blocks `npx.ps1` with an execution policy error, use `npx.cmd` and `npm.cmd` in PowerShell.
 
-## Learn more
+### 1. Install Dependencies
 
-To learn more about developing your project with Expo, look at the following resources:
+Root (mobile app):
+```powershell
+npm.cmd install
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Backend:
+```powershell
+npm.cmd install --prefix backend
+```
 
-## Join the community
+### 2. Configure Backend Environment
 
-Join our community of developers creating universal apps.
+1. Copy the example env file:
+   ```powershell
+   Copy-Item backend\.env.example backend\.env
+   ```
+2. Open `backend/.env` and add your OpenAI API key:
+   ```env
+   PORT=3001
+   OPENAI_API_KEY=sk-...
+   OPENAI_MODEL=gpt-4o-mini
+   ```
+   *(Your API key stays strictly on the backend and is never bundled into the mobile app.)*
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### 3. Run the Backend Server (Terminal 1)
+
+```powershell
+npm.cmd run dev --prefix backend
+```
+
+Verify it is running by visiting `http://localhost:3001/api/health` in your browser.
+
+### 4. Run on Android Emulator (Terminal 2)
+
+1. Open **Android Studio → Device Manager** and start your Android Emulator.
+2. Start Expo:
+   ```powershell
+   npx.cmd expo start --android
+   ```
+   The mobile app automatically routes Android Emulator API calls to `http://10.0.2.2:3001` so it reaches your Windows backend out of the box.
+
+*(To override the backend URL manually, create a `.env` file at the repo root with `EXPO_PUBLIC_API_URL=http://<YOUR_PC_LAN_IP>:3001`.)*
+
+---
+
+## Testing on iPhone XS (from Windows)
+
+You cannot run the local iOS Simulator on Windows (it requires macOS + Xcode), but you can test on your physical **iPhone XS**:
+
+1. **Expo Go (fastest for development):**
+   - Sign in to the same Expo account on both Windows (`npx.cmd expo login`) and the Expo Go app on your iPhone XS.
+   - Connect both devices to the same Wi-Fi network and run `npx.cmd expo start` (or `npx.cmd expo start --tunnel` if your router blocks local traffic).
+   - Scan the QR code with your iPhone Camera.
+2. **Standalone Development Build (cloud build via Expo Build):**
+   - Requires an active Apple Developer Program membership.
+   - Run `npx.cmd eas-cli@latest build --platform ios --profile development` from Windows to build and install a dev client on your iPhone XS without a Mac.
+
+---
+
+## Future iOS Share Extension Architecture Plan
+
+ReplyMate AI is structured so an **iOS Share Extension** can be added cleanly in a future native release without rewriting the core app:
+
+1. **Shared Parsing & API Layer:** `src/utils/whatsappParser.ts` and `src/services/replyApi.ts` are pure, UI-independent modules.
+2. **Deep-Link Entry Point:** Expo Router already registers the `replymateai://` URL scheme (`app.json`) and accepts prefill parameters on `/input` (`prefillText`, `mode`).
+3. **Native iOS Requirements (Future Step):**
+   - Requires an Apple Developer Program account and an iOS **Share Extension** target configured via an Expo Config Plugin (generated via `npx expo prebuild` / EAS Build).
+   - Configure an **App Group** entitlement so the Share Extension can write exported WhatsApp `.txt` text into a shared container and open `replymateai://input?mode=import` via URL scheme.
+   - Because Share Extensions only receive data when the user explicitly taps **Share → ReplyMate AI** inside WhatsApp, this preserves the app's privacy model and complies with Apple App Store guidelines.
+
+---
+
+## Backend API Reference
+
+### `GET /api/health`
+Returns server status and whether `OPENAI_API_KEY` is configured.
+
+### `POST /api/replies/generate`
+Generates context-aware reply options using structured JSON output.
+
+**Request:**
+```json
+{
+  "conversation": "Hamza: Kal ka kya scene hai?\nMe: Shaam ko batata hun",
+  "latestMessage": "Jaldi bata dena yaar, warna sab plan cancel kar denge",
+  "style": ["natural", "funny", "friendly"],
+  "language": "mixed",
+  "conciseMode": true,
+  "avoidEmojis": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "replies": [
+    {
+      "style": "natural",
+      "text": "...",
+      "reason": "..."
+    }
+  ]
+}
+```
+
+---
+
+## Verification & Tests
+
+```powershell
+# Backend unit & Express integration tests
+npm.cmd test --prefix backend
+
+# WhatsApp chat parser tests
+node --test scripts/test-whatsapp-parser.mjs
+
+# TypeScript check, ESLint, and Expo health diagnostics
+npx.cmd tsc --noEmit
+npx.cmd expo lint
+npx.cmd expo-doctor
+```

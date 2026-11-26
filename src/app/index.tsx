@@ -1,98 +1,244 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import {
+  AppButton,
+  AppCard,
+  AppIcon,
+  IconBadge,
+  PillBadge,
+  type AppIconName,
+} from '@/components/ui';
+import { MaxContentWidth, Palette, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+interface HighlightItem {
+  id: string;
+  icon: AppIconName;
+  title: string;
+  description: string;
 }
 
-export default function HomeScreen() {
+const HIGHLIGHTS: HighlightItem[] = [
+  {
+    id: 'context',
+    icon: 'sparkles',
+    title: 'Reads tone & conversation history',
+    description: 'Understands previous messages, relationship vibe, and what was just asked.',
+  },
+  {
+    id: 'styles',
+    icon: 'chat',
+    title: 'Natural, Funny & Friendly options',
+    description: 'Pick from 3 tailored replies with a short reason explaining why each fits.',
+  },
+  {
+    id: 'languages',
+    icon: 'translate',
+    title: 'Urdu, Roman Urdu & English',
+    description: 'Sounds like a real person texting — concise, warm, and never robotic.',
+  },
+];
+
+export default function WelcomeScreen() {
+  const theme = useTheme();
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      {/* Subtle decorative background accents */}
+      <View
+        pointerEvents="none"
+        style={[styles.topGlow, { backgroundColor: theme.surfaceTinted }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.sideGlow, { backgroundColor: theme.accentSoft }]}
+      />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.container}>
+          {/* Brand Header */}
+          <Animated.View entering={FadeInUp.duration(450)} style={styles.brandSection}>
+            <View
+              style={[
+                styles.logoEmblem,
+                {
+                  backgroundColor: theme.heroBackground,
+                  borderColor: theme.heroBorder,
+                },
+                Shadows.elevated,
+              ]}>
+              <AppIcon name="chat" size={32} color={Palette.white} />
+              <View style={[styles.logoSparkle, { backgroundColor: theme.accent }]}>
+                <AppIcon name="sparkles" size={14} color={Palette.white} />
+              </View>
+            </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+            <PillBadge label="AI WhatsApp Reply Assistant" variant="softBlue" icon="sparkles" />
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+            <Text style={[Typography.hero, styles.appName, { color: theme.text }]}>
+              ReplyMate AI
+            </Text>
+
+            <Text style={[Typography.subtitle, styles.tagline, { color: theme.accent }]}>
+              Never get stuck on what to reply.
+            </Text>
+
+            <Text style={[Typography.body, styles.description, { color: theme.textSecondary }]}>
+              Paste a WhatsApp conversation or import an exported chat file to get smart,
+              human-sounding replies in seconds.
+            </Text>
+          </Animated.View>
+
+          {/* Feature Highlights */}
+          <Animated.View entering={FadeInDown.delay(120).duration(450)} style={styles.highlights}>
+            {HIGHLIGHTS.map((item) => (
+              <AppCard key={item.id} variant="elevated" padding="md">
+                <View style={styles.highlightRow}>
+                  <IconBadge
+                    icon={item.icon}
+                    backgroundColor={theme.surfaceTinted}
+                    iconColor={theme.accent}
+                    size="md"
+                  />
+                  <View style={styles.highlightText}>
+                    <Text style={[Typography.cardTitle, { color: theme.text }]}>{item.title}</Text>
+                    <Text style={[Typography.bodySmall, { color: theme.textSecondary }]}>
+                      {item.description}
+                    </Text>
+                  </View>
+                </View>
+              </AppCard>
+            ))}
+          </Animated.View>
+
+          {/* Privacy Assurance */}
+          <Animated.View entering={FadeInDown.delay(220).duration(450)}>
+            <AppCard variant="tinted" padding="sm">
+              <View style={styles.privacyRow}>
+                <AppIcon name="shield" size={18} color={theme.accent} />
+                <Text style={[Typography.bodySmall, styles.privacyText, { color: theme.textSecondary }]}>
+                  Manual paste or `.txt` chat import only. ReplyMate AI never monitors WhatsApp
+                  automatically.
+                </Text>
+              </View>
+            </AppCard>
+          </Animated.View>
+
+          {/* Primary Action */}
+          <Animated.View entering={FadeInDown.delay(300).duration(450)} style={styles.ctaContainer}>
+            <AppButton
+              label="Get Started"
+              variant="primary"
+              size="lg"
+              rightIcon="arrowForward"
+              fullWidth
+              onPress={() => router.replace('/home')}
+            />
+          </Animated.View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
   },
-  heroSection: {
+  topGlow: {
+    position: 'absolute',
+    top: -120,
+    right: -70,
+    width: 280,
+    height: 280,
+    borderRadius: Radius.full,
+    opacity: 0.7,
+  },
+  sideGlow: {
+    position: 'absolute',
+    top: 120,
+    left: -90,
+    width: 180,
+    height: 180,
+    borderRadius: Radius.full,
+    opacity: 0.4,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xl,
+  },
+  container: {
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    gap: Spacing.lg,
+  },
+  brandSection: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  logoEmblem: {
+    width: 76,
+    height: 76,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    marginBottom: Spacing.xs,
   },
-  title: {
+  logoSparkle: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 26,
+    height: 26,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Palette.white,
+  },
+  appName: {
     textAlign: 'center',
+    marginTop: Spacing.xxs,
   },
-  code: {
-    textTransform: 'uppercase',
+  tagline: {
+    textAlign: 'center',
+    fontSize: 19,
+    lineHeight: 25,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  description: {
+    textAlign: 'center',
+    maxWidth: 420,
+  },
+  highlights: {
+    gap: Spacing.sm,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  highlightText: {
+    flex: 1,
+    gap: Spacing.xxs,
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  privacyText: {
+    flex: 1,
+  },
+  ctaContainer: {
+    paddingTop: Spacing.xxs,
   },
 });
