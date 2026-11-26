@@ -109,6 +109,8 @@ EXPO_PUBLIC_API_URL=https://your-service.onrender.com
 
 The repo includes a [`render.yaml`](render.yaml) Blueprint.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/faiz12457/ReplyMate-AI)
+
 ### Option A — Blueprint (recommended)
 
 1. Push the repository to GitHub.
