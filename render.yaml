@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: replymate-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false # Set in the Render dashboard; never commit the real key.
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: AI_TIMEOUT_MS
+        value: "20000"
+      - key: ALLOWED_ORIGINS
+        value: ""

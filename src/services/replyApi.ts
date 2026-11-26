@@ -4,7 +4,8 @@ import { Platform } from 'react-native';
 import type { ReplyLanguage, ReplyOption, ReplyStyle } from '@/types/replymate';
 
 const DEFAULT_BACKEND_PORT = 3001;
-const REQUEST_TIMEOUT_MS = 25000;
+// Render free-tier services can take 30-60s to wake from idle, so allow extra headroom.
+const REQUEST_TIMEOUT_MS = 45000;
 
 export interface GenerateRepliesRequest {
   conversation: string;
@@ -111,7 +112,7 @@ export async function generateReplies(
 
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ReplyApiError(
-        'Request timed out while waiting for AI suggestions. Please try again.',
+        'Request timed out while waiting for AI suggestions. The server may be waking up — please try again.',
         408,
         'TIMEOUT'
       );
