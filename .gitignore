@@ -46,3 +46,7 @@ example
 backend/node_modules/
 backend/.env
 backend/.env*.local
+
+# mobile root env (contains API URL — keep local)
+.env
+.env.local
